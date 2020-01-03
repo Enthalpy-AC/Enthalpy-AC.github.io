@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>EvELYN</title>
+    <meta charset="utf-8" />
+  </head>
+  <body>
+    <style>
+    ul li { padding: 0 0 0 10px; }
+    </style>
+    <!--Add buttons to initiate auth sequence and sign out-->
+    <button id="authorize_button" style="display: none;">Authorize</button>
+    <button id="signout_button" style="display: none;">Sign Out</button>
+    <pre id="content"></pre>
+
+    <script type="text/javascript">
+      // Client ID and API key from the Developer Console
+      var CLIENT_ID = '168422506601-3eo44q0jh5d1h316t5fpj4qeaggn32eb.apps.googleusercontent.com'
+      var API_KEY = 'AIzaSyAjQ4DQ1KlF7YCYP4Q0gSAXg27yvgOA98U';
+
+      // Array of API discovery doc URLs for APIs used by the quickstart
+      var DISCOVERY_DOCS = ['https://docs.googleapis.com/$discovery/rest?version=v1'];
+
+      // Authorization scopes required by the API; multiple scopes can be
+      // included, separated by spaces.
+      var SCOPES = "https://www.googleapis.com/auth/documents.readonly";
+
+      var authorizeButton = document.getElementById('authorize_button');
+      var signoutButton = document.getElementById('signout_button');
+
+      //  On load, called to load the auth2 library and API client library.
+      function handleClientLoad() {
+        gapi.load('client:auth2', initClient);
+      }
+
+      // Initializes the API client library and sets up sign-in state listeners.
+      function initClient() {
+        gapi.client.init({
+          apiKey: API_KEY,
+          clientId: CLIENT_ID,
+          discoveryDocs: DISCOVERY_DOCS,
+          scope: SCOPES
+        }).then(function() {
+          // Listen for sign-in state changes.
+          gapi.auth2.getAuthInstance().isSignedIn.listen(updateSigninStatus);
+
+          // Handle the initial sign-in state.
+          updateSigninStatus(gapi.auth2.getAuthInstance().isSignedIn.get());
+          authorizeButton.onclick = handleAuthClick;
+          signoutButton.onclick = handleSignoutClick;
+        });
+      }
+
+      /**
+       *  Called when the signed in status changes, to update the UI
+       *  appropriately. After a sign-in, the API is called.
+       */
+      function updateSigninStatus(isSignedIn) {
+        if (isSignedIn) {
+          authorizeButton.style.display = 'none';
+          signoutButton.style.display = 'block';
+          //printDocTitle();
+          getDoc();
+        } else {
+          authorizeButton.style.display = 'block';
+          signoutButton.style.display = 'none';
+        }
+      }
+
+      /**
+       *  Sign in the user upon button click.
+       */
+      function handleAuthClick(event) {
+        gapi.auth2.getAuthInstance().signIn();
+      }
+
+      /**
+       *  Sign out the user upon button click.
+       */
+      function handleSignoutClick(event) {
+        gapi.auth2.getAuthInstance().signOut();
+      }
+
+      /**
+       * Append a pre element to the body containing the given message
+       * as its text node. Used to display the results of the API call.
+       *
+       * @param {string} message Text to be placed in pre element.
+       */
+      function appendPre(message) {
+        var pre = document.getElementById('content');
+        var textContent = document.createTextNode(message + '\n');
+        pre.appendChild(textContent);
+      }
+
+      /**
+       * Prints the title of a sample doc:
+       * https://docs.google.com/document/d/195j9eDD3ccgjQRttHhJPymLJUCOUjs-jmwTrekvdjFE/edit
+       */
+      function printDocTitle() {
+        gapi.client.docs.documents.get({
+        documentId: '195j9eDD3ccgjQRttHhJPymLJUCOUjs-jmwTrekvdjFE'
+      }).then(function(response) {
+        var doc = response.result;
+        var title = doc.title;
+        appendPre('Document "' + title + '" successfully found.\n');
+      }, function(response) {
+        appendPre('Error: ' + response.result.error.message);
+      });
+    }
+
+    function getDoc() {
+        gapi.client.docs.documents.get({
+            documentId: '1jQT6g8tcX4gnQOCFi2AkC9ufiofTkp95rhDwIfVznYg'
+        }).then(extractDoc);
+    }
+
+    function extractDoc(response) {
+        var doc = response.result;
+        var content = doc.body.content;
+        var tag_to_clues = {}; // tag_to_clues[tag][clue_type] = list of clue li
+        var active_clue_type;
+        var active_tags = [];
+		const clue_types = ["Narrative", "RUNE", "Blackrune", "Red", "Thoughts"]
+
+        var checkboxes = document.createElement('div');
+        var name_to_checklist_dom = {}; // tag -> list of input checkbox; A single tag can have multiple checkboxes if it has multiple parents
+        var name_to_evidence_dom = {}; // tag -> div containing header and list of clues
+        var name_to_parents = {};
+        var name_to_children = {}; // tag -> list of child tags... Only tags with children are added
+		var top_level_names = [];
+
+        function parseTagDeclarations(tag_declaration) {
+            // If the line is pure whitespace, we're done parsing tag declaration.
+            if (!(tag_declaration.trim())) {
+               return parseEvidenceLabels;
+            }
+            var tags = tag_declaration.split(':').map(x => x.trim());
+            // populate tag_to_clues
+            var new_tag = tags[tags.length - 1];
+            if (tags.length > 2) { throw "Too many tags in line: " + tag_declaration; }
+			
+			// Initialize this tag's entry in tag_to_clues.
+			// Without square brackets, val is taken to be a string for... some reason
+			tag_to_clues[new_tag] = clue_types.reduce((acc, val) => Object.assign(acc, {[val]: []}), {});
+
+            if (tags.length == 2) {
+                // populate name_to_parents;
+                var old_tag = tags[0];
+                if (!(name_to_parents.hasOwnProperty(new_tag))) name_to_parents[new_tag] = [];
+                name_to_parents[new_tag].push(old_tag);
+                // populate name_to_children
+                if (!(name_to_children.hasOwnProperty(old_tag))) name_to_children[old_tag] = [];
+                name_to_children[old_tag].push(new_tag);
+            } else if (tags.length == 1) {
+				top_level_names.push(new_tag);
+            }
+
+            // populate name_to_evidence_dom if not yet created
+            if (!(name_to_evidence_dom.hasOwnProperty(new_tag))) {
+                var container = document.createElement('div');
+                container.style.display = 'none';
+                var header = document.createElement('h2');
+                header.innerHTML = new_tag;
+                var new_evidence_list = document.createElement('ul');
+                container.appendChild(header);
+                container.appendChild(new_evidence_list);
+                name_to_evidence_dom[new_tag] = container;
+            }
+            return parseTagDeclarations;
+        }
+
+        function parseEvidenceLabels(tags) {
+            active_tags = tags.split(';').map(x => x.trim()).filter(x => x);
+            if (!(active_tags)) {
+				// This line had no labels. Let's try again...
+                // Note: This SHOULD only fire on blank lines. I may want to add a special exception for non-blank.
+				return parseEvidenceLabels
+            } else if (active_tags.length == 1) {
+            // We might be at a section divider... Check.
+				if (clue_types.indexOf(active_tags[0]) > -1) {
+                    // Yep, this is a section divider. Update active_clue_type, then look for tags again.
+					active_clue_type = active_tags[0];
+					return parseEvidenceLabels
+				}
+            }
+            // Nope, we weren't at a section divider. Create an entry for the tag in all clues.
+            for (const tag of active_tags) {
+                if (!(tag_to_clues.hasOwnProperty(tag))) { throw "Tag '" + tag + "' does not exist" }; // Validate the tag.
+                var entry = document.createElement('li');
+                tag_to_clues[tag][active_clue_type].push(entry);
+            }
+            return parseEntry;
+        }
+
+        function parseEntry(entry) {
+            // Updates all list elements from the active tag.
+            for (const tag of active_tags) {
+				var li_list = tag_to_clues[tag][active_clue_type];
+                var li = li_list[li_list.length - 1];
+                if (li.innerHTML) {
+                    li.innerHTML += " "
+                }
+                li.innerHTML += entry;
+            }
+			return parseEntry;
+        }
+
+        var parse_func = parseTagDeclarations;
+        for (const struct_elt of content) {
+            if (!(struct_elt.hasOwnProperty('paragraph'))) continue;
+            var elements = struct_elt.paragraph.elements;
+            for (const element of elements) {
+                if (!(element.hasOwnProperty('textRun'))) continue;
+                var trimmed_elt = element.textRun.content.trim();
+                // The primary action happens in parse_func. The return just sets the parsing procedure for the next "unit."
+                parse_func = parse_func(trimmed_elt);
+            }
+            // At a paragraph end, we're done parsing the entry.
+            if (parse_func == parseEntry) parse_func = parseEvidenceLabels;
+        }
+
+        var unordered_list = document.getElementById('master_checklist');
+		checklist_recursion(unordered_list, top_level_names);
+
+        var evidence_holder = document.getElementById('evidence_holder');
+        // For each tag, populate the list of clues and add the tag's div to the clue holding div.
+        for (let [tag, div] of Object.entries(name_to_evidence_dom)) {
+            for (const clues_of_type of Object.values(tag_to_clues[tag])) {
+                for (const clue of clues_of_type) {
+                    div.appendChild(clue);
+                }
+            }
+            evidence_holder.appendChild(div);
+        }
+
+        function make_check_item(tag) {
+            var new_list_elt = document.createElement('li');
+            var new_list_check = document.createElement('input');
+            new_list_check.type = 'checkbox';
+            new_list_check.class = 'evidenceToggler';
+            new_list_check.onclick = toggle_visibility;
+            new_list_elt.appendChild(new_list_check);
+            new_list_elt.insertAdjacentHTML('beforeEnd', tag);
+            if (!(name_to_checklist_dom.hasOwnProperty(tag))) name_to_checklist_dom[tag] = [];
+            name_to_checklist_dom[tag].push(new_list_check);
+			return new_list_elt
+        }
+
+         /* Given a node and a list of its children tags, for each child, build the checkbox tree fand append to the node.
+		/ node is modified. children_list is not. */
+        function checklist_recursion(node, children_array) {
+            for (const child_tag of children_array) {
+	            var child_li = make_check_item(child_tag);
+				var grandchild_tags = name_to_children[child_tag];
+				if (grandchild_tags) {
+                    var expand_button = document.createElement('button');
+                    var collapse_button = document.createElement('button');
+                    collapse_button.style.display = 'none';
+					var child_list = document.createElement('ul');
+                    child_list.style.display = 'none';
+                    expand_button.innerHTML = 'Expand';
+                    collapse_button.innerHTML = 'Collapse';
+                    expand_button.onclick = (function(expand_button, collapse_button, child_list) {expand_button.style.display = 'none'; collapse_button.style.display = 'inline'; child_list.style.display = 'inline'}).bind(undefined, expand_button, collapse_button, child_list);
+                    collapse_button.onclick = function() {expand_button.style.display = 'inline'; collapse_button.style.display = 'none'; child_list.style.display = 'none'};
+					checklist_recursion(child_list, grandchild_tags);
+                    child_li.appendChild(expand_button);
+                    child_li.appendChild(collapse_button);
+					child_li.appendChild(child_list);
+				}
+				node.appendChild(child_li);
+            }
+        }
+
+        function toggle_visibility(event) {
+            var visible = {};
+
+            function isVisible(tag) {
+                // Have we already computed if this is visible?
+                if (visible.hasOwnProperty(tag)) return visible[tag];
+                // Is this visible in and of itself?
+                var container = name_to_evidence_dom[tag];
+                for (const checkbox of name_to_checklist_dom[tag]) {
+                    if (checkbox.checked) {
+                        visible[tag] = true;
+                        container.style.display = 'inline';
+                        return visible[tag];
+                    }
+                }
+                // Well, are any descendants visible?
+				if (name_to_children.hasOwnProperty(tag)) {
+                    for (const descendant of name_to_children[tag]) {
+                        if (isVisible(descendant)) {
+                            visible[tag] = true;
+                            container.style.display = 'inline';
+                            return visible[tag];
+					    }
+                    }
+                }
+                // No, this is just invisible.
+                visible[tag] = false;
+                container.style.display = 'none';
+                return visible[tag];
+            }
+
+            for (let [tag, div]  of Object.entries(name_to_evidence_dom)) {
+                div.style.display = isVisible(tag) ? 'inline' : 'none';
+            }
+        }
+
+    }
+    </script>
+    <script async="" defer="" onload="this.onload=function(){};handleClientLoad()" onreadystatechange="if (this.readyState === 'complete') this.onload()" src="https://apis.google.com/js/api.js"></script>
+    <ul id="master_checklist"></ul>
+    <div id="evidence_holder"></div>
+  </body>
+</html>
