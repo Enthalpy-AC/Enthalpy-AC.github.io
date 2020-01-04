@@ -186,7 +186,11 @@
             }
             // Nope, we weren't at a section divider. Create an entry for the tag in all clues.
             for (const tag of active_tags) {
-                if (!(tag_to_clues.hasOwnProperty(tag))) { throw "Tag '" + tag + "' does not exist" }; // Validate the tag.
+                // Validate the tag
+                if (!(tag_to_clues.hasOwnProperty(tag))) {
+                    console.log("Tag '" + tag + "' does not exist");
+                    tag = "Broken Tag";
+                }
                 var entry = document.createElement('li');
                 tag_to_clues[tag][active_clue_type].push(entry);
             }
