@@ -33,7 +33,6 @@ I broke the site! Can you fix it?
     If so, that should tell you what went wrong.
 
 TODO:
-* The current version breaks if it detects an unrecognized tag. Add a new unsorted category, ASAP.
 * Include the PSS logo
 * Include an "emote" to distinguish between narrative clues, RUNE clues, Blackrune clues, Isa's updates, reds, and
   theories. It would automatically be added before each clue.
